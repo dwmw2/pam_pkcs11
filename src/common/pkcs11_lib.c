@@ -472,12 +472,50 @@ find_slot_by_slotlabel(pkcs11_handle_t *h, const char *wanted_slot_label,
   int i;
 
   if (slotID == NULL || wanted_slot_label == NULL ||
-      strlen(wanted_slot_label) == 0 || module == NULL)
+      strlen(wanted_slot_label) == 0)
     return (-1);
 
   if (strcmp(wanted_slot_label, "none") == 0) {
     rv = find_slot_by_number(h, 0, slotID);
     return (rv);
+  } else if (module == NULL) {
+    /* if module is null,
+   * any of the PKCS #11 modules specified in the system config
+   * is available; find one */
+    PK11SlotList *list;
+    PK11SlotListElement *le;
+    PK11SlotInfo *slot = NULL;
+
+    /* find a slot, we haven't specifically selected a module,
+     * so find an appropriate one. */
+    /* get them all */
+    list = PK11_GetAllTokens(CKM_INVALID_MECHANISM, PR_FALSE, PR_TRUE, NULL);
+    if (list == NULL) {
+	return -1;
+    }
+    for (le = list->head; le; le = le->next) {
+      CK_SLOT_INFO slInfo;
+      SECStatus rv;
+
+      slInfo.flags = 0;
+      rv = PK11_GetSlotInfo(le->slot, &slInfo);
+      if (rv == SECSuccess && (slInfo.flags & CKF_REMOVABLE_DEVICE)) {
+        const char *slot_label;
+
+	slot = PK11_ReferenceSlot(le->slot);
+	slot_label = PK11_GetSlotName(le->slot);
+
+	if (memcmp_pad_max((void *)slot_label, strlen(slot_label),
+	    (void *)wanted_slot_label, strlen(wanted_slot_label), 64) == 0) {
+	  h->slot = le->slot;
+	  *slotID = PK11_GetSlotID(le->slot);
+	  PK11_FreeSlotList(list);
+	  return 0;
+	}
+      }
+    }
+    PK11_FreeSlotList(list);
+    return -1;
   } else {
     /* wanted_slot_label is not "none"  */
     for (i = 0; i < module->slotCount; i++) {
