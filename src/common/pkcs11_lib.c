@@ -977,6 +977,7 @@ struct cert_object_str {
 typedef struct {
   CK_SLOT_ID id;
   CK_BBOOL token_present;
+  CK_FLAGS slot_flags;
   CK_UTF8CHAR label[33]; /* token label */
   CK_UTF8CHAR slotDescription[64];
 } slot_t;
@@ -1078,7 +1079,7 @@ refresh_slots(pkcs11_handle_t *h)
       set_error("C_GetSlotInfo() failed: 0x%08lX", rv);
       return -1;
     }
-
+    h->slots[i].slot_flags = sinfo.flags;
     (void) memcpy(h->slots[i].slotDescription, sinfo.slotDescription,
 		sizeof(h->slots[i].slotDescription));
 
@@ -1205,8 +1206,11 @@ int find_slot_by_number(pkcs11_handle_t *h, unsigned int slot_num, unsigned int 
 {
    /* zero means find the best slot */
    if (slot_num == 0) {
-	for (slot_num = 0; slot_num < h->slot_count &&
-				!h->slots[slot_num].token_present; slot_num++);
+	   for (slot_num = 0; slot_num < h->slot_count; slot_num++) {
+		   if (h->slots[slot_num].token_present &&
+		       (h->slots[slot_num].slot_flags & CKF_REMOVABLE_DEVICE))
+			   break;
+	   }
    } else {
 	/* otherwize it's an index into the slot table  (it is *NOT* the slot
 	 * id!).... */
